@@ -375,6 +375,7 @@ if __name__ == "__main__":
         ("figure1", "0072241446366"),
         ("figure2", "717131454447"),
         ("figure3", "013000122544446666"),
+        ("figure4", "04"),
     ]
 
     for fig_name, code in figures:
