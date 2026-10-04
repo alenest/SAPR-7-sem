@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Лабораторная работа №1. Аффинные преобразования.
 Студент: Нестеров А.С., группа Аэ-21-23.
@@ -11,20 +10,17 @@
 === ТЕОРИЯ (сжато) ===
 Код Фримэна. Примитив описывается цепочкой элементарных векторов по 8
 направлениям. Направление i = i*45°, i = 0..7. Длина вектора
-D = T*(sqrt(2))^p, p = i mod 2 (T — линейный размер клетки). При T=1
-чётные направления дают (±1,0)/(0,±1), нечётные — (±1,±1).
+D = T*(sqrt(2))^p, p = i mod 2. При T=1 чётные направления дают
+(±1,0)/(0,±1), нечётные — (±1,±1).
 
 Однородные координаты. Точка P(X, Y, W), W != 0. Декартовы:
 x = X/W, y = Y/W. При W=1: P(x, y, 1). Зачем: в декартовых 2x2 нельзя
-одной матрицей описать перенос, а в однородных 3x3 — можно. Также
-однородные координаты позволяют задавать точки в бесконечности
-(W = 0) и делать проективные преобразования.
+одной матрицей описать перенос, а в однородных 3x3 — можно.
 
 Аффинное преобразование в однородных координатах: p' = M @ p,
 где M — матрица 3x3, p = [x, y, 1]^T.
 
-Композиция. Сначала M1, потом M2: p' = M2 @ M1 @ p. Порядок важен,
-умножение матриц не коммутативно.
+Композиция. Сначала M1, потом M2: p' = M2 @ M1 @ p. Порядок важен.
 
 Смена системы координат. Чтобы выполнить операцию относительно
 произвольной точки/прямой, переходим в удобную систему (точка — начало,
@@ -61,10 +57,9 @@ FREEMAN_STEPS = {
 
 
 def decode_freeman(code):
-    """Декодирует код Фримэна в список вершин (x, y). Возвращает
-    список без дублирующей последней точки (замкнутый контур)."""
+    """Декодирует код Фримэна в список вершин (x, y) без дублирующей точки."""
     x, y = 0, 0
-    points = [(x, y)]                          # стартовая вершина
+    points = [(x, y)]
     for ch in code:
         dx, dy = FREEMAN_STEPS[ch]
         x += dx
@@ -84,8 +79,8 @@ def points_to_homogeneous(points):
 
 def apply_matrix(M, points):
     """Применяет матрицу 3x3 к списку точек. Возвращает список (x, y)."""
-    P = points_to_homogeneous(points)          # Nx3
-    P_new = P @ M.T                            # Nx3 @ 3x3 = Nx3
+    P = points_to_homogeneous(points)
+    P_new = P @ M.T
     W = P_new[:, 2:3].copy()
     W[W == 0] = 1.0                            # защита от деления на 0
     xy = P_new[:, :2] / W
@@ -108,9 +103,9 @@ def translation(tx, ty):
 
 
 def scaling(sx, sy):
-    """Масштабирование (sx, sy). При sx=sy — однородное, иначе неоднородное.
-    | sx  0  0 |     Последовательные масштабирования мультипликативны:
-    |  0 sy  0 |     S(a) @ S(b) = S(a*b).
+    """Масштабирование (sx, sy). При sx=sy — однородное.
+    | sx  0  0 |     Последовательные масштабирования мультипликативны.
+    |  0 sy  0 |
     |  0  0  1 |"""
     return np.array([[float(sx), 0.0,       0.0],
                      [0.0,      float(sy), 0.0],
@@ -120,8 +115,8 @@ def scaling(sx, sy):
 def rotation(theta):
     """Поворот на theta (радианы, против часовой) вокруг начала координат.
     | cos -sin  0 |   Отрицательный поворот — транспонированная матрица
-    | sin  cos  0 |   положительного. Два последовательных поворота
-    |  0    0   1 |   аддитивны: R(a) @ R(b) = R(a+b)."""
+    | sin  cos  0 |   положительного. Два поворота аддитивны.
+    |  0    0   1 |"""
     c, s = math.cos(theta), math.sin(theta)
     return np.array([[c, -s, 0.0],
                      [s,  c, 0.0],
@@ -143,7 +138,7 @@ def reflection_y():
 
 
 def reflection_origin():
-    """Отражение относительно начала координат (центральная симметрия)."""
+    """Отражение относительно начала координат."""
     return np.array([[-1.0,  0.0, 0.0],
                      [ 0.0, -1.0, 0.0],
                      [ 0.0,  0.0, 1.0]])
@@ -197,6 +192,14 @@ def reflection_about_line(k, b):
 # ЧАСТЬ 5. ВИЗУАЛИЗАЦИЯ
 # =============================================================
 
+def compute_bounds(polygons, pad=1.5):
+    """Габариты по всем полигонам: (x_lo, x_hi, y_lo, y_hi).
+    Используется, чтобы задать xlim/ylim и обрезать прямую по краям."""
+    xs = [p[0] for poly in polygons for p in poly]
+    ys = [p[1] for poly in polygons for p in poly]
+    return (min(xs) - pad, max(xs) + pad, min(ys) - pad, max(ys) + pad)
+
+
 def plot_polygon(ax, points, label, color, linestyle='-'):
     """Рисует замкнутый многоугольник и добавляет его в легенду."""
     xs = [p[0] for p in points] + [points[0][0]]
@@ -249,19 +252,26 @@ def draw_freeman(ax, points, code):
                     textcoords='offset points', xytext=(6, -10),
                     fontsize=8, color='navy')
 
+    # Габариты исходной фигуры + отступ
+    x_lo, x_hi, y_lo, y_hi = compute_bounds([points], pad=1.0)
+    ax.set_xlim(x_lo, x_hi)
+    ax.set_ylim(y_lo, y_hi)
     ax.grid(True, linestyle='--', alpha=0.5)
     ax.set_aspect('equal')
     ax.set_title(f"Исходная фигура (код Фримэна: {code})")
     ax.legend(loc='upper right')
 
 
-def draw_line_y_eq_kx_b(ax, k, b, points, x_pad=2):
-    """Рисует прямую y = kx + b пунктиром в диапазоне, покрывающем фигуру."""
-    xs = [p[0] for p in points]
-    x_lo, x_hi = min(xs) - x_pad, max(xs) + x_pad
-    ax.plot([x_lo, x_hi], [k * x_lo + b, k * x_hi + b],
+def draw_line_y_eq_kx_b(ax, k, b, label=None):
+    """Рисует прямую y = kx + b по текущим границам осей.
+    Т.к. xlim/ylim уже заданы, отрезок прямой автоматически обрежется
+    matplotlib'ом по краям области — не нужно считать диапазон самим."""
+    x_lo, x_hi = ax.get_xlim()
+    ax.plot([x_lo, x_hi],
+            [k * x_lo + b, k * x_hi + b],
             '--', color='magenta', linewidth=1.5,
-            label=f'y = {k}x + {b}')
+            label=label or f'y = {k}x + {b}',
+            zorder=1)
 
 
 def matrix_to_text(name, M):
@@ -310,7 +320,8 @@ def process_figure(fig_name, code, output_dir, ty=5, k=3, b=10):
     plt.close(fig1)
 
     # -------- КАРТИНКА 2: все шаги вместе + прямая --------
-    fig2, ax2 = plt.subplots(figsize=(11, 11))
+    # ВАЖНО: это ПОШАГОВЫЙ рисунок. Комплексного итога здесь НЕТ.
+    fig2, ax2 = plt.subplots(figsize=(10, 10))
     plot_polygon(ax2, points, "Исходный",                   'black')
     plot_polygon(ax2, p1,     f"После переноса T(0,{ty})",  'green')
     plot_polygon(ax2, p2,     f"Шаг 1: T(0,{-b})",          'olive')
@@ -318,14 +329,23 @@ def process_figure(fig_name, code, output_dir, ty=5, k=3, b=10):
     plot_polygon(ax2, p4,     "Шаг 3: Rx",                  'red')
     plot_polygon(ax2, p5,     "Шаг 4: R(alpha)",            'purple')
     plot_polygon(ax2, p6,     f"Шаг 5: T(0,{b})",           'brown')
-    plot_polygon(ax2, p_comb, "Итог (комплексно)",          'blue',
-                 linestyle='--')
-    draw_line_y_eq_kx_b(ax2, k, b, points, x_pad=4)         # прямая y = kx+b
+
+    # Границы по всем полигонам + запас, чтобы прямая была видна рядом
+    x_lo, x_hi, y_lo, y_hi = compute_bounds(
+        [points, p1, p2, p3, p4, p5, p6], pad=1.5
+    )
+    ax2.set_xlim(x_lo, x_hi)
+    ax2.set_ylim(y_lo, y_hi)
+
+    # Прямая — рисуется поверх заданных границ и обрезается автоматически
+    draw_line_y_eq_kx_b(ax2, k, b)
+
     ax2.grid(True, linestyle='--', alpha=0.5)
     ax2.set_aspect('equal')
     ax2.set_title(f"Пошаговое преобразование: {fig_name}\n"
                   f"(перенос по Y на {ty}, отражение отн. y = {k}x + {b})")
-    ax2.legend(loc='best', fontsize=9)
+    # Легенда — снаружи осей, чтобы не закрывать полигоны
+    ax2.legend(loc='upper left', bbox_to_anchor=(1.02, 1.0), fontsize=9)
     fig2.savefig(os.path.join(output_dir, f"{fig_name}_2_steps.png"),
                  dpi=150, bbox_inches='tight')
     plt.close(fig2)
@@ -334,15 +354,25 @@ def process_figure(fig_name, code, output_dir, ty=5, k=3, b=10):
     fig3, ax3 = plt.subplots(figsize=(9, 9))
     plot_polygon(ax3, points, "Исходный",                   'black')
     plot_polygon(ax3, p_comb, "Комплексное преобразование",  'blue')
-    draw_line_y_eq_kx_b(ax3, k, b, points, x_pad=4)         # прямая y = kx+b
+
+    x_lo, x_hi, y_lo, y_hi = compute_bounds(
+        [points, p_comb], pad=1.5
+    )
+    ax3.set_xlim(x_lo, x_hi)
+    ax3.set_ylim(y_lo, y_hi)
+
+    draw_line_y_eq_kx_b(ax3, k, b)
+
     ax3.grid(True, linestyle='--', alpha=0.5)
     ax3.set_aspect('equal')
     ax3.set_title(f"Комплексное преобразование: {fig_name}\n"
                   f"M_combined = M_reflect @ T(0,{ty})")
-    ax3.legend(loc='best')
-    ax3.text(0.02, 0.02, matrix_to_text("M_combined", M_comb),
-             transform=ax3.transAxes, va='bottom', family='monospace',
-             fontsize=8,
+    # Легенда — снаружи осей
+    ax3.legend(loc='upper left', bbox_to_anchor=(1.02, 1.0), fontsize=9)
+    # Матрица — в правом нижнем углу осей, чтобы не налезала на фигуры
+    ax3.text(0.98, 0.02, matrix_to_text("M_combined", M_comb),
+             transform=ax3.transAxes, va='bottom', ha='right',
+             family='monospace', fontsize=8,
              bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.85))
     fig3.savefig(os.path.join(output_dir, f"{fig_name}_3_combined.png"),
                  dpi=150, bbox_inches='tight')
@@ -357,13 +387,11 @@ if __name__ == "__main__":
     output_dir = "results"
     os.makedirs(output_dir, exist_ok=True)
 
-    # Три невыпуклых 9-угольника. Каждый проверен вручную:
-    # 9 углов, есть 3 рефлексные (вогнутые) вершины, сумма dx = dy = 0,
-    # нет самопересечений. Все разные по форме и масштабу.
+    # Три невыпуклых 9-угольника: разные формы и масштабы.
     figures = [
-        ("figure1", "0000242424665"),              # малый зигзаг (≈ 4x3)
-        ("figure2", "0000022224664246655"),        # средний с выемкой (≈ 5x4)
-        ("figure3", "000000224222446466655"),      # крупный ступенчатый (≈ 6x5)
+        ("figure1", "0000242424665"),              # малый зигзаг
+        ("figure2", "0000022224664246655"),        # средний с выемкой
+        ("figure3", "000000224222446466655"),      # крупный ступенчатый
     ]
 
     for fig_name, code in figures:
