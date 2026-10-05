@@ -26,21 +26,34 @@
 rotation_about_point, scaling_about_point, reflection_about_line.
 """
 
+# ----------------------------------------------------------------------
+# БЛОК ИМПОРТОВ. Подключаем только то, что реально используется.
+# math — для cos/sin/atan/hypot/floor/ceil (тригонометрия и округления).
+# os — для работы с путями и создания папки results.
+# numpy — ТОЛЬКО для умножения матриц (@) и работы с массивами точек.
+#         Сами аффинные матрицы выписаны вручную, а не через библиотеку.
+# matplotlib.pyplot — ТОЛЬКО для отрисовки, не для преобразований.
+# ----------------------------------------------------------------------
 import math
 import os
-import numpy as np                      # только для @ и массивов точек
-import matplotlib.pyplot as plt         # только для отрисовки
+import numpy as np
+import matplotlib.pyplot as plt
 
 
 # =============================================================
 # ЧАСТЬ 1. КОД ФРИМЭНА
 # =============================================================
-# 8 направлений обхода:
+# Схема направлений обхода клетчатой плоскости:
 #     3   2   1
 #      \  |  /
 #   4 ——  *  —— 0
 #      /  |  \
 #     5   6   7
+# ----------------------------------------------------------------------
+
+# Словарь: цифра кода → единичный вектор (dx, dy) в клетках.
+# Чётные коды — длина 1 (по осям), нечётные — длина √2 (по диагоналям,
+# но в целочисленных приращениях это (±1, ±1)).
 FREEMAN_STEPS = {
     '0': ( 1,  0),   # вправо
     '1': ( 1,  1),   # вправо-вверх
@@ -56,45 +69,52 @@ FREEMAN_STEPS = {
 def decode_freeman(code):
     """Декодирует код Фримэна в список вершин (x, y). Возвращает
     список без дублирующей последней точки (замкнутый контур)."""
-    x, y = 0, 0
-    points = [(x, y)]
-    for ch in code:
-        dx, dy = FREEMAN_STEPS[ch]
-        x += dx
-        y += dy
-        points.append((x, y))
-    return points[:-1]                          # убираем дубликат старта
+    x, y = 0, 0                  # стартовая точка обхода — начало координат
+    points = [(x, y)]            # список вершин; первая — стартовая
+    for ch in code:              # идём по каждому символу строки кода
+        dx, dy = FREEMAN_STEPS[ch]   # берём вектор шага из словаря
+        x += dx                  # сдвигаем текущую координату X
+        y += dy                  # сдвигаем текущую координату Y
+        points.append((x, y))    # запоминаем новую вершину
+    return points[:-1]           # отбрасываем последнюю = дубликат первой
 
 
 # =============================================================
 # ЧАСТЬ 2. РАБОТА С ТОЧКАМИ И МАТРИЦАМИ
 # =============================================================
+# Все преобразования делаются в однородных координатах.
+# Точка (x, y) представляется как [x, y, 1]^T — вектор-столбец из 3 чисел.
+# ----------------------------------------------------------------------
 
 def points_to_homogeneous(points):
     """Список (x, y) → Nx3 массив [[x, y, 1], ...]."""
+    # Для каждой декартовой точки добавляем третью координату W = 1.
+    # Именно W=1 позволяет применять к точкам матрицы 3x3, включающие перенос.
     return np.array([[x, y, 1.0] for (x, y) in points])
 
 
 def apply_matrix(M, points):
     """Применяет матрицу 3x3 к списку точек. Возвращает список (x, y)."""
-    P = points_to_homogeneous(points)
-    P_new = P @ M.T
-    W = P_new[:, 2:3].copy()
-    W[W == 0] = 1.0                             # защита от деления на 0
-    xy = P_new[:, :2] / W
-    return [tuple(p) for p in xy]
+    P = points_to_homogeneous(points)    # Nx3: исходные точки в однородных координатах
+    P_new = P @ M.T                      # Nx3 @ 3x3 = Nx3 (столбцовая нотация: p' = M @ p)
+    W = P_new[:, 2:3].copy()             # берём третью координату (однородный вес)
+    W[W == 0] = 1.0                      # защита от деления на 0 (для аффинных W всегда 1)
+    xy = P_new[:, :2] / W                # делим на W → возвращаемся в декартовы координаты
+    return [tuple(p) for p in xy]        # возвращаем список кортежей (x, y)
 
 
 # =============================================================
 # ЧАСТЬ 3. ЭЛЕМЕНТАРНЫЕ АФФИННЫЕ ПРЕОБРАЗОВАНИЯ
 # =============================================================
 # Все матрицы выписаны вручную. Формат — вектор-столбец p = [x, y, 1]^T.
+# ----------------------------------------------------------------------
 
 def translation(tx, ty):
     """Перенос на (tx, ty).
     | 1  0  tx |  Последовательные переносы аддитивны:
     | 0  1  ty |  T(a) @ T(b) = T(a+b).
     | 0  0   1 |"""
+    # Единичная матрица 2x2 в верхнем левом углу + вектор переноса в 3-м столбце.
     return np.array([[1.0, 0.0, float(tx)],
                      [0.0, 1.0, float(ty)],
                      [0.0, 0.0, 1.0]])
@@ -105,6 +125,7 @@ def scaling(sx, sy):
     | sx  0  0 |  Последовательные масштабирования мультипликативны.
     |  0 sy  0 |
     |  0  0  1 |"""
+    # Диагональная матрица с коэффициентами по осям.
     return np.array([[float(sx), 0.0,       0.0],
                      [0.0,      float(sy), 0.0],
                      [0.0,      0.0,       1.0]])
@@ -115,14 +136,15 @@ def rotation(theta):
     | cos -sin  0 |  Отрицательный поворот — транспонированная матрица
     | sin  cos  0 |  положительного. Два поворота аддитивны.
     |  0    0   1 |"""
-    c, s = math.cos(theta), math.sin(theta)
-    return np.array([[c, -s, 0.0],
-                     [s,  c, 0.0],
-                     [0.0, 0.0, 1.0]])
+    c, s = math.cos(theta), math.sin(theta)   # заранее считаем cos и sin
+    return np.array([[c, -s, 0.0],            # верхняя строка: cos, −sin, 0
+                     [s,  c, 0.0],            # нижняя строка: sin,  cos, 0
+                     [0.0, 0.0, 1.0]])        # однородная строка
 
 
 def reflection_x():
     """Отражение относительно оси X."""
+    # Меняем знак y-координаты, x остаётся тем же.
     return np.array([[1.0,  0.0, 0.0],
                      [0.0, -1.0, 0.0],
                      [0.0,  0.0, 1.0]])
@@ -130,6 +152,7 @@ def reflection_x():
 
 def reflection_y():
     """Отражение относительно оси Y."""
+    # Меняем знак x-координаты, y остаётся тем же.
     return np.array([[-1.0, 0.0, 0.0],
                      [ 0.0, 1.0, 0.0],
                      [ 0.0, 0.0, 1.0]])
@@ -137,6 +160,7 @@ def reflection_y():
 
 def reflection_origin():
     """Отражение относительно начала координат."""
+    # Меняем знаки обеих координат — это композиция Rx @ Ry.
     return np.array([[-1.0,  0.0, 0.0],
                      [ 0.0, -1.0, 0.0],
                      [ 0.0,  0.0, 1.0]])
@@ -144,6 +168,7 @@ def reflection_origin():
 
 def reflection_y_eq_x():
     """Отражение относительно прямой y = x."""
+    # Обмен местами x и y: матрица с единицами на побочной диагонали.
     return np.array([[0.0, 1.0, 0.0],
                      [1.0, 0.0, 0.0],
                      [0.0, 0.0, 1.0]])
@@ -151,6 +176,7 @@ def reflection_y_eq_x():
 
 def reflection_y_eq_minus_x():
     """Отражение относительно прямой y = -x."""
+    # Обмен с одновременной сменой знаков.
     return np.array([[ 0.0, -1.0, 0.0],
                      [-1.0,  0.0, 0.0],
                      [ 0.0,  0.0, 1.0]])
@@ -159,17 +185,23 @@ def reflection_y_eq_minus_x():
 # =============================================================
 # ЧАСТЬ 4. КОМПОЗИТНЫЕ ПРЕОБРАЗОВАНИЯ (СМЕНА СИСТЕМЫ КООРДИНАТ)
 # =============================================================
-# M = T(в удобную систему) @ (простое преобразование) @ T(обратно).
+# Идея: M = T(в удобную систему) @ (простое преобразование) @ T(обратно).
+# ----------------------------------------------------------------------
 
 def rotation_about_point(px, py, theta):
     """Поворот на theta вокруг точки (px, py):
     M = T(px, py) @ R(theta) @ T(-px, -py)."""
+    # Порядок умножения читается справа налево:
+    #   1) сдвигаем точку вращения в начало координат,
+    #   2) вращаем,
+    #   3) возвращаем точку на место.
     return translation(px, py) @ rotation(theta) @ translation(-px, -py)
 
 
 def scaling_about_point(px, py, sx, sy):
     """Масштабирование относительно точки (px, py):
     M = T(px, py) @ S(sx, sy) @ T(-px, -py)."""
+    # Тот же приём: сдвинули → масштабировали → вернули.
     return translation(px, py) @ scaling(sx, sy) @ translation(-px, -py)
 
 
@@ -180,7 +212,8 @@ def reflection_about_line(k, b):
       3) Rx         — отражение относительно оси X
       4) R(alpha)   — обратный поворот
       5) T(0, b)    — обратный сдвиг, alpha = atan(k)."""
-    alpha = math.atan(k)
+    alpha = math.atan(k)                        # угол наклона прямой к оси X
+    # Собираем композицию из 5 матриц — ровно в порядке из лекции.
     return (translation(0, b) @ rotation(alpha) @ reflection_x()
             @ rotation(-alpha) @ translation(0, -b))
 
@@ -188,50 +221,61 @@ def reflection_about_line(k, b):
 # =============================================================
 # ЧАСТЬ 5. ВИЗУАЛИЗАЦИЯ
 # =============================================================
+# Все функции ниже ТОЛЬКО рисуют — они не делают никаких преобразований.
+# ----------------------------------------------------------------------
 
 def compute_bounds(polygons, pad=1.5):
     """Габариты по всем полигонам: (x_lo, x_hi, y_lo, y_hi)."""
+    # Распаковываем X и Y всех вершин всех полигонов в плоские списки.
     xs = [p[0] for poly in polygons for p in poly]
     ys = [p[1] for poly in polygons for p in poly]
+    # Возвращаем границы с одинаковым отступом pad со всех сторон.
     return (min(xs) - pad, max(xs) + pad, min(ys) - pad, max(ys) + pad)
 
 
 def set_unit_grid(ax):
     """Ставит деления каждые 1 единицу (масштаб клетки = 1)."""
-    x_lo, x_hi = ax.get_xlim()
-    y_lo, y_hi = ax.get_ylim()
+    x_lo, x_hi = ax.get_xlim()                  # текущие границы по X
+    y_lo, y_hi = ax.get_ylim()                  # текущие границы по Y
+    # Целочисленные тики от floor(lo) до ceil(hi) включительно — шаг 1.
     ax.set_xticks(range(int(math.floor(x_lo)), int(math.ceil(x_hi)) + 1))
     ax.set_yticks(range(int(math.floor(y_lo)), int(math.ceil(y_hi)) + 1))
 
 
 def plot_polygon(ax, points, label, color, linestyle='-'):
     """Рисует замкнутый многоугольник и добавляет его в легенду."""
+    # Замыкаем контур: к списку X и Y добавляем первую точку в конец.
     xs = [p[0] for p in points] + [points[0][0]]
     ys = [p[1] for p in points] + [points[0][1]]
+    # Рисуем ломаную с маркерами в вершинах; label попадёт в легенду.
     ax.plot(xs, ys, marker='o', color=color, label=label,
             linestyle=linestyle, linewidth=1.5, markersize=4)
 
 
 def draw_freeman(ax, points, code):
     """Рисует исходную фигуру со стрелками по рёбрам и координатами вершин."""
-    n = len(points)
+    n = len(points)                             # количество вершин
+    # Замкнутый контур для отрисовки (первая точка продублирована в конце).
     xs = [p[0] for p in points] + [points[0][0]]
     ys = [p[1] for p in points] + [points[0][1]]
+    # Оранжевая жирная линия — сам многоугольник (как в методичке).
     ax.plot(xs, ys, color='orange', linewidth=2.5, zorder=2)
+    # Точки-вершины поверх линии.
     ax.plot([p[0] for p in points], [p[1] for p in points],
             'o', color='darkorange', markersize=6, zorder=3,
             label='Исходный 9-угольник')
 
-    # Стрелки в середине каждого ребра
+    # Стрелки в середине каждого ребра — по направлению обхода.
     for i in range(n):
-        x1, y1 = points[i]
-        x2, y2 = points[(i + 1) % n]
-        mx, my = (x1 + x2) / 2, (y1 + y2) / 2
-        dx, dy = x2 - x1, y2 - y1
-        L = math.hypot(dx, dy)
-        if L < 1e-9:
+        x1, y1 = points[i]                      # начало i-го ребра
+        x2, y2 = points[(i + 1) % n]            # конец (для последнего — снова 0-е)
+        mx, my = (x1 + x2) / 2, (y1 + y2) / 2   # середина ребра
+        dx, dy = x2 - x1, y2 - y1               # вектор ребра
+        L = math.hypot(dx, dy)                  # длина ребра
+        if L < 1e-9:                            # вырожденное ребро — пропускаем
             continue
-        ux, uy = dx / L, dy / L
+        ux, uy = dx / L, dy / L                 # нормированный вектор направления
+        # Рисуем стрелку от точки «−0.4·направление» к «+0.4·направление».
         ax.annotate('',
                     xy=(mx + ux * 0.4, my + uy * 0.4),
                     xytext=(mx - ux * 0.4, my - uy * 0.4),
@@ -239,18 +283,19 @@ def draw_freeman(ax, points, code):
                                     lw=1.6, mutation_scale=16),
                     zorder=4)
 
-    # Подписи координат вершин
+    # Подписи координат вершин — с небольшим смещением от точек.
     for (x, y) in points:
         ax.annotate(f'({int(x)},{int(y)})', (x, y),
                     textcoords='offset points', xytext=(6, -10),
                     fontsize=8, color='navy')
 
+    # Границы осей: по габаритам фигуры + небольшой запас.
     x_lo, x_hi, y_lo, y_hi = compute_bounds([points], pad=1.0)
     ax.set_xlim(x_lo, x_hi)
     ax.set_ylim(y_lo, y_hi)
-    set_unit_grid(ax)
-    ax.grid(True, linestyle='--', alpha=0.5)
-    ax.set_aspect('equal')
+    set_unit_grid(ax)                           # клетки по 1 единице
+    ax.grid(True, linestyle='--', alpha=0.5)    # сетка
+    ax.set_aspect('equal')                      # 1:1 по осям, клетки квадратные
     ax.set_title(f"Исходная фигура (код Фримэна: {code})")
     ax.legend(loc='upper right')
 
@@ -258,7 +303,8 @@ def draw_freeman(ax, points, code):
 def draw_line_y_eq_kx_b(ax, k, b):
     """Прямая y = kx + b по текущим границам осей. matplotlib сам
     обрежет её по краям — xlim/ylim уже должны быть заданы."""
-    x_lo, x_hi = ax.get_xlim()
+    x_lo, x_hi = ax.get_xlim()                  # берём текущие границы по X
+    # Рисуем пунктирную прямую по двум крайним точкам; matplotlib обрежет.
     ax.plot([x_lo, x_hi],
             [k * x_lo + b, k * x_hi + b],
             '--', color='magenta', linewidth=1.5,
@@ -267,52 +313,56 @@ def draw_line_y_eq_kx_b(ax, k, b):
 
 def matrix_to_text(name, M):
     """Текстовая запись матрицы 3x3 для вывода на графике."""
-    lines = [name + " ="]
-    for row in M:
+    lines = [name + " ="]                       # заголовок
+    for row in M:                               # перебираем строки матрицы
+        # Форматируем элементы с фиксированной шириной 8 знаков, 4 после точки.
         lines.append("[ " + "  ".join(f"{v:8.4f}" for v in row) + " ]")
-    return "\n".join(lines)
+    return "\n".join(lines)                     # склеиваем строки в один текст
 
 
 # =============================================================
 # ЧАСТЬ 6. ОБРАБОТКА ОДНОЙ ФИГУРЫ
 # =============================================================
+# Здесь сосредоточена вся логика: строим матрицы, применяем, сохраняем 3 PNG.
+# ----------------------------------------------------------------------
 
 def process_figure(fig_name, code, output_dir, ty=5, k=3, b=10):
     """Строит 3 картинки для одной фигуры и сохраняет их в output_dir."""
-    # 1) Декодируем вершины
+    # 1) Декодируем код в список вершин (без последней дублирующей точки).
     points = decode_freeman(code)
 
-    # 2) Строим нужные матрицы
-    T_y    = translation(0, ty)                 # перенос по Y
-    M_refl = reflection_about_line(k, b)        # отражение отн. y = kx + b
-    M_comb = M_refl @ T_y                       # комплексная матрица
+    # 2) Строим нужные матрицы.
+    T_y    = translation(0, ty)                 # перенос по Y на +ty
+    M_refl = reflection_about_line(k, b)        # отражение относительно y = kx + b
+    M_comb = M_refl @ T_y                       # комплексная матрица: сначала T, потом отражение
 
-    # Отдельные шаги отражения — для показа пошагово
-    T_negb = translation(0, -b)
-    R_neg  = rotation(-math.atan(k))
-    Rx     = reflection_x()
-    R_pos  = rotation(math.atan(k))
-    T_posb = translation(0, b)
+    # Те же шаги отражения, но по отдельности — для наглядного пошагового рисунка.
+    T_negb = translation(0, -b)                 # шаг 1: сдвиг прямой к началу координат
+    R_neg  = rotation(-math.atan(k))            # шаг 2: поворот на −α (совмещаем прямую с осью X)
+    Rx     = reflection_x()                     # шаг 3: собственно отражение относительно оси X
+    R_pos  = rotation(math.atan(k))             # шаг 4: обратный поворот на +α
+    T_posb = translation(0, b)                  # шаг 5: возврат прямой на место
 
-    # 3) Цепочка состояний S0 → S1 → ... → S6
-    S0 = points
-    S1 = apply_matrix(T_y,    S0)               # после переноса
-    S2 = apply_matrix(T_negb, S1)               # шаг 1
-    S3 = apply_matrix(R_neg,  S2)               # шаг 2
-    S4 = apply_matrix(Rx,     S3)               # шаг 3
-    S5 = apply_matrix(R_pos,  S4)               # шаг 4
-    S6 = apply_matrix(T_posb, S5)               # шаг 5 — итог отражения
-    S_comb = apply_matrix(M_comb, S0)           # комплексный итог
+    # 3) Строим цепочку состояний: S0 → S1 → … → S6.
+    S0 = points                                 # S0 — исходный многоугольник
+    S1 = apply_matrix(T_y,    S0)               # S1 = T_y · S0 — после переноса
+    S2 = apply_matrix(T_negb, S1)               # S2 = T(0,−b) · S1
+    S3 = apply_matrix(R_neg,  S2)               # S3 = R(−α) · S2
+    S4 = apply_matrix(Rx,     S3)               # S4 = Rx · S3
+    S5 = apply_matrix(R_pos,  S4)               # S5 = R(α) · S4
+    S6 = apply_matrix(T_posb, S5)               # S6 = T(0,b) · S5 — итог отражения
+    S_comb = apply_matrix(M_comb, S0)           # тот же результат одной комплексной матрицей
 
-    # -------- КАРТИНКА 1: исходная фигура --------
-    fig1, ax1 = plt.subplots(figsize=(8, 8))
-    draw_freeman(ax1, points, code)
+    # -------- КАРТИНКА 1: исходная фигура с кодом Фримэна --------
+    fig1, ax1 = plt.subplots(figsize=(8, 8))    # создаём фигуру 8x8
+    draw_freeman(ax1, points, code)             # рисуем исходник со стрелками и координатами
     fig1.savefig(os.path.join(output_dir, f"{fig_name}_1_original.png"),
-                 dpi=150, bbox_inches='tight')
-    plt.close(fig1)
+                 dpi=150, bbox_inches='tight')  # сохраняем PNG без лишних полей
+    plt.close(fig1)                             # закрываем фигуру (освобождаем память)
 
     # -------- КАРТИНКА 2: ПОШАГОВО (только цепочка S0…S6) --------
     fig2, ax2 = plt.subplots(figsize=(11, 10))
+    # Каждое состояние подписано и своим цветом — в легенде читается порядок.
     plot_polygon(ax2, S0, "S0 — исходный 9-угольник", 'black')
     plot_polygon(ax2, S1, f"S1 = T(0,{ty})·S0 — перенос вверх на {ty}", 'green')
     plot_polygon(ax2, S2, f"S2 = T(0,{-b})·S1 — сдвиг прямой y={k}x+{b} к началу координат", 'olive')
@@ -321,19 +371,20 @@ def process_figure(fig_name, code, output_dir, ty=5, k=3, b=10):
     plot_polygon(ax2, S5, "S5 = R(α)·S4 — обратный поворот на α", 'purple')
     plot_polygon(ax2, S6, f"S6 = T(0,{b})·S5 — возврат прямой на место (итог отражения)", 'brown')
 
+    # Границы по всем 7 состояниям — чтобы всё влезло и прямая тоже.
     x_lo, x_hi, y_lo, y_hi = compute_bounds(
         [S0, S1, S2, S3, S4, S5, S6], pad=1.5
     )
     ax2.set_xlim(x_lo, x_hi)
     ax2.set_ylim(y_lo, y_hi)
-    set_unit_grid(ax2)
-    draw_line_y_eq_kx_b(ax2, k, b)
+    set_unit_grid(ax2)                          # клетки по 1 единице
+    draw_line_y_eq_kx_b(ax2, k, b)              # пунктирная линия y = 3x + 10
 
     ax2.grid(True, linestyle='--', alpha=0.5)
     ax2.set_aspect('equal')
     ax2.set_title(f"Пошаговое преобразование: {fig_name}\n"
                   f"(перенос по Y на {ty}, отражение отн. y = {k}x + {b})")
-    ax2.legend(loc='upper left', bbox_to_anchor=(1.02, 1.0), fontsize=9)
+    ax2.legend(loc='upper left', bbox_to_anchor=(1.02, 1.0), fontsize=9)   # легенда снаружи
     fig2.savefig(os.path.join(output_dir, f"{fig_name}_2_steps.png"),
                  dpi=150, bbox_inches='tight')
     plt.close(fig2)
@@ -343,17 +394,19 @@ def process_figure(fig_name, code, output_dir, ty=5, k=3, b=10):
     plot_polygon(ax3, S0,     "Исходный 9-угольник",     'black')
     plot_polygon(ax3, S_comb, "M_combined·S0 — результат комплексного преобразования", 'blue')
 
+    # Границы только по исходному и комплексному состояниям.
     x_lo, x_hi, y_lo, y_hi = compute_bounds([S0, S_comb], pad=1.5)
     ax3.set_xlim(x_lo, x_hi)
     ax3.set_ylim(y_lo, y_hi)
     set_unit_grid(ax3)
-    draw_line_y_eq_kx_b(ax3, k, b)
+    draw_line_y_eq_kx_b(ax3, k, b)              # та же прямая-ось отражения
 
     ax3.grid(True, linestyle='--', alpha=0.5)
     ax3.set_aspect('equal')
     ax3.set_title(f"Комплексное преобразование: {fig_name}\n"
                   f"M_combined = M_reflect @ T(0,{ty})")
     ax3.legend(loc='upper left', bbox_to_anchor=(1.02, 1.0), fontsize=9)
+    # Матрица M_combined — текстом в правом нижнем углу осей.
     ax3.text(0.98, 0.02, matrix_to_text("M_combined", M_comb),
              transform=ax3.transAxes, va='bottom', ha='right',
              family='monospace', fontsize=8,
@@ -366,11 +419,16 @@ def process_figure(fig_name, code, output_dir, ty=5, k=3, b=10):
 # =============================================================
 # ЧАСТЬ 7. ТОЧКА ВХОДА
 # =============================================================
+# Этот блок выполняется, только если файл запущен напрямую (не импортирован).
+# ----------------------------------------------------------------------
 
 if __name__ == "__main__":
-    output_dir = "results"
-    os.makedirs(output_dir, exist_ok=True)
+    output_dir = "results"                      # папка для сохранения картинок
+    os.makedirs(output_dir, exist_ok=True)      # создаём, если её ещё нет
 
+    # Список фигур: пары (имя, код Фримэна).
+    # Первые три — невыпуклые 9-угольники (по заданию).
+    # Четвёртая — тестовый отрезок 04 для проверки математики.
     figures = [
         ("figure1", "0072241446366"),
         ("figure2", "717131454447"),
@@ -378,6 +436,7 @@ if __name__ == "__main__":
         ("figure4", "04"),
     ]
 
+    # Идём по фигурам и для каждой строим 3 картинки.
     for fig_name, code in figures:
         print(f"Обработка {fig_name} (код: {code}) ...")
         process_figure(fig_name, code, output_dir,
